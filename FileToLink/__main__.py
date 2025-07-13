@@ -1,3 +1,6 @@
+import os
+os.system("ntpdate -u pool.ntp.org || true")  # Sync server time to fix Pyrogram msg_id error
+
 from asyncio import Future, sleep
 from time import time
 
@@ -16,7 +19,6 @@ from FileToLink.server import app
 from FileToLink.worker import Worker, AllWorkers, NotFound
 from FileToLink.utils import participant
 
-
 Last_Time = {}
 
 
@@ -32,17 +34,18 @@ async def main(_, msg: Message):
 
     worker = AllWorkers.get(file_id=media.file_unique_id)
     if worker:
-        # If the file already exist on the server
         if not worker.parts[0]:
-            # If first part of the file is not downloaded yet, send Generating link message
-            gen_msg = await bot.send_message(msg.chat.id, Strings.generating_link,
-                                             reply_to_message_id=msg.message_id)
+            gen_msg = await bot.send_message(
+                msg.chat.id, Strings.generating_link,
+                reply_to_message_id=msg.message_id
+            )
         else:
             gen_msg = None
     else:
-        # Else if the file not exist on the server, Send the message to Archive Channel and Create empty file
-        gen_msg = await bot.send_message(msg.chat.id, Strings.generating_link,
-                                         reply_to_message_id=msg.message_id)
+        gen_msg = await bot.send_message(
+            msg.chat.id, Strings.generating_link,
+            reply_to_message_id=msg.message_id
+        )
 
         archived_msg = await archive_msg(msg)
         worker = Worker(archived_msg)
@@ -51,17 +54,17 @@ async def main(_, msg: Message):
         if archived_msg.message_id in NotFound:
             NotFound.remove(archived_msg.message_id)
 
-        await worker.create_file()  # Create empty file
+        await worker.create_file()
 
-    await worker.first_dl()  # Download first 2 parts from the file
+    await worker.first_dl()
 
-    name = worker.name  # File Name
-    dl_link = worker.link  # Download Link
+    name = worker.name
+    dl_link = worker.link
     text = f"[{name}]({dl_link})"
 
     buttons = [[InlineKeyboardButton(Strings.dl_link, url=dl_link)]]
     if worker.stream:
-        st_link = f'{dl_link}?st=1'  # Stream Link
+        st_link = f'{dl_link}?st=1'
         buttons.append([InlineKeyboardButton(Strings.st_link, url=st_link)])
     buttons.append([InlineKeyboardButton(Strings.update_link, callback_data=f'fast|{worker.archive_id}')])
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -69,8 +72,12 @@ async def main(_, msg: Message):
     if gen_msg is not None:
         await gen_msg.edit_text(text, reply_markup=reply_markup, disable_web_page_preview=True)
     else:
-        await bot.send_message(msg.chat.id, text, reply_to_message_id=msg.message_id,
-                               reply_markup=reply_markup, disable_web_page_preview=True)
+        await bot.send_message(
+            msg.chat.id, text,
+            reply_to_message_id=msg.message_id,
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
+        )
 
 
 async def wait(chat_id: int):
@@ -87,23 +94,17 @@ async def wait(chat_id: int):
 
 @bot.on_message(filters.command("start"))
 async def start(_, msg: Message):
-    buttons = [[InlineKeyboardButton(Strings.dev_channel, url=f'https://t.me/shadow_bots')]]
+    buttons = [[InlineKeyboardButton(Strings.dev_channel, url='https://t.me/shadow_bots')]]
     if Config.Bot_Channel:
         buttons.append([InlineKeyboardButton(Strings.bot_channel, url=f'https://t.me/{Config.Bot_Channel}')])
     await msg.reply_text(Strings.start, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def keep_awake(sleep_time=20 * 60):
-    """
-    Heroku will sleep if it doesn't receive request during 30 minutes.
-    So this function will send request every specific time.
-    The time should be less than 30 minutes.
-    """
     await sleep(sleep_time)
     async with ClientSession() as session:
         async with session.get(Config.Link_Root + "keep_awake"):
             pass
-        
 
 
 async def startup():
