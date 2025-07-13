@@ -1,8 +1,10 @@
-import os
-os.system("ntpdate -u pool.ntp.org || true")  # Sync server time to fix Pyrogram msg_id error
+import ntplib
+import time
+import asyncio
+import logging
 
 from asyncio import Future, sleep
-from time import time
+from time import time as time_time
 
 from aiohttp import ClientSession
 from hypercorn.asyncio import serve
@@ -19,7 +21,21 @@ from FileToLink.server import app
 from FileToLink.worker import Worker, AllWorkers, NotFound
 from FileToLink.utils import participant
 
+
 Last_Time = {}
+
+
+async def sync_time_with_ntp(bot):
+    try:
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org')
+        ntp_time = response.tx_time
+        local_time = time.time()
+        offset = ntp_time - local_time
+        bot.session.time_offset = offset
+        print(f"[✓] Synchronized time offset: {offset:.2f} seconds")
+    except Exception as e:
+        print(f"[!] NTP time sync failed: {e}")
 
 
 @bot.on_message(filters.media & filters.private & filters.incoming)
@@ -82,14 +98,14 @@ async def main(_, msg: Message):
 
 async def wait(chat_id: int):
     if chat_id in Last_Time:
-        x = time() - Last_Time[chat_id]
+        x = time_time() - Last_Time[chat_id]
         if x < Config.Separate_Time:
             Last_Time[chat_id] += Config.Separate_Time
             await sleep(Config.Separate_Time - x)
         else:
-            Last_Time[chat_id] = time()
+            Last_Time[chat_id] = time_time()
     else:
-        Last_Time[chat_id] = time()
+        Last_Time[chat_id] = time_time()
 
 
 @bot.on_message(filters.command("start"))
@@ -110,9 +126,11 @@ async def keep_awake(sleep_time=20 * 60):
 async def startup():
     try:
         await bot.start()
+        await sync_time_with_ntp(bot)
     except (AuthKeyDuplicated, AuthKeyInvalid, SessionRevoked, SessionExpired):
         bot.storage = MemoryStorage(":memory:")
         await bot.start()
+        await sync_time_with_ntp(bot)
     Config.Bot_UserName = (await bot.get_me()).username
 
 
