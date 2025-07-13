@@ -5,8 +5,7 @@ TgCrypto~=1.2.2
 
 Quart==0.16.0
 Hypercorn==0.12.0
+
 aiohttp~=3.8.0
 
-# Add these to prevent import errors
-jinja2<3.1
-werkzeug<2.1
+ntplib
