@@ -1,11 +1,23 @@
 import ntplib
-import time
-import asyncio
-import logging
+from time import time as system_time, ctime
+import os
+
+# Force time sync to avoid BadMsgNotification error from Pyrogram
+def sync_time():
+    try:
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org')
+        synced_time = response.tx_time
+        offset = synced_time - system_time()
+        os.environ['TZ'] = 'UTC'
+        print("Time synchronized:", ctime(synced_time))
+    except Exception as e:
+        print("Time sync failed:", e)
+
+sync_time()
 
 from asyncio import Future, sleep
-from time import time as time_time
-
+from time import time
 from aiohttp import ClientSession
 from hypercorn.asyncio import serve
 from hypercorn import Config as HypercornConfig
@@ -24,20 +36,6 @@ from FileToLink.utils import participant
 
 Last_Time = {}
 
-
-async def sync_time_with_ntp(bot):
-    try:
-        client = ntplib.NTPClient()
-        response = client.request('pool.ntp.org')
-        ntp_time = response.tx_time
-        local_time = time.time()
-        offset = ntp_time - local_time
-        bot.session.time_offset = offset
-        print(f"[✓] Synchronized time offset: {offset:.2f} seconds")
-    except Exception as e:
-        print(f"[!] NTP time sync failed: {e}")
-
-
 @bot.on_message(filters.media & filters.private & filters.incoming)
 async def main(_, msg: Message):
     await wait(msg.chat.id)
@@ -51,18 +49,11 @@ async def main(_, msg: Message):
     worker = AllWorkers.get(file_id=media.file_unique_id)
     if worker:
         if not worker.parts[0]:
-            gen_msg = await bot.send_message(
-                msg.chat.id, Strings.generating_link,
-                reply_to_message_id=msg.message_id
-            )
+            gen_msg = await bot.send_message(msg.chat.id, Strings.generating_link, reply_to_message_id=msg.message_id)
         else:
             gen_msg = None
     else:
-        gen_msg = await bot.send_message(
-            msg.chat.id, Strings.generating_link,
-            reply_to_message_id=msg.message_id
-        )
-
+        gen_msg = await bot.send_message(msg.chat.id, Strings.generating_link, reply_to_message_id=msg.message_id)
         archived_msg = await archive_msg(msg)
         worker = Worker(archived_msg)
         AllWorkers.add(worker)
@@ -88,24 +79,20 @@ async def main(_, msg: Message):
     if gen_msg is not None:
         await gen_msg.edit_text(text, reply_markup=reply_markup, disable_web_page_preview=True)
     else:
-        await bot.send_message(
-            msg.chat.id, text,
-            reply_to_message_id=msg.message_id,
-            reply_markup=reply_markup,
-            disable_web_page_preview=True
-        )
+        await bot.send_message(msg.chat.id, text, reply_to_message_id=msg.message_id,
+                               reply_markup=reply_markup, disable_web_page_preview=True)
 
 
 async def wait(chat_id: int):
     if chat_id in Last_Time:
-        x = time_time() - Last_Time[chat_id]
+        x = time() - Last_Time[chat_id]
         if x < Config.Separate_Time:
             Last_Time[chat_id] += Config.Separate_Time
             await sleep(Config.Separate_Time - x)
         else:
-            Last_Time[chat_id] = time_time()
+            Last_Time[chat_id] = time()
     else:
-        Last_Time[chat_id] = time_time()
+        Last_Time[chat_id] = time()
 
 
 @bot.on_message(filters.command("start"))
@@ -126,11 +113,9 @@ async def keep_awake(sleep_time=20 * 60):
 async def startup():
     try:
         await bot.start()
-        await sync_time_with_ntp(bot)
     except (AuthKeyDuplicated, AuthKeyInvalid, SessionRevoked, SessionExpired):
         bot.storage = MemoryStorage(":memory:")
         await bot.start()
-        await sync_time_with_ntp(bot)
     Config.Bot_UserName = (await bot.get_me()).username
 
 
